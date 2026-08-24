@@ -1,0 +1,36 @@
+# Secrets / environment
+.env
+.env.*
+*credentials*.json
+*service-account*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Data & model artifacts (use R2 / BigQuery / W&B, not git)
+data/raw/**
+!data/raw/README.md
+data/processed/**
+!data/processed/README.md
+*.parquet
+*.csv
+models/**/*.json
+models/**/*.pkl
+models/**/*.pt
+models/**/*.ckpt
+!models/**/README.md
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+
+# OS
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
