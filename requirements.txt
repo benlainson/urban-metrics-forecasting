@@ -1,0 +1,8 @@
+pandas
+requests
+xgboost
+prophet
+wandb
+google-cloud-bigquery
+pyarrow
+python-dotenv
