@@ -1,0 +1,115 @@
+name: weather_hourly
+version: 1
+
+description: >
+  Normalized hourly weather observations for Chicago. This dataset is
+  produced from Open-Meteo historical weather responses and is intended
+  for joining with transit and energy data.
+
+source:
+  provider: Open-Meteo
+  endpoint: https://archive-api.open-meteo.com/v1/archive
+
+grain: One row per weather location per UTC hour
+
+primary_key:
+  - timestamp_utc
+  - latitude
+  - longitude
+
+timezone: UTC
+
+columns:
+  - name: timestamp_utc
+    type: datetime
+    format: ISO-8601
+    timezone: UTC
+    nullable: false
+    description: Beginning of the hour represented by this observation.
+
+  - name: temperature_2m_c
+    type: float
+    unit: "°C"
+    nullable: true
+    description: Air temperature measured or estimated two metres above ground.
+
+  - name: relative_humidity_2m_pct
+    type: float
+    unit: "%"
+    nullable: true
+    minimum: 0
+    maximum: 100
+    description: Relative humidity measured or estimated two metres above ground.
+
+  - name: apparent_temperature_c
+    type: float
+    unit: "°C"
+    nullable: true
+    description: Perceived temperature accounting for factors such as humidity and wind.
+
+  - name: precipitation_mm
+    type: float
+    unit: "mm"
+    nullable: true
+    minimum: 0
+    description: >
+      Total precipitation accumulated during the preceding hour, including
+      rain, showers, and snowfall water equivalent. This is not an
+      instantaneous measurement.
+
+  - name: rain_mm
+    type: float
+    unit: "mm"
+    nullable: true
+    minimum: 0
+    description: Rain accumulated during the preceding hour.
+
+  - name: snowfall_cm
+    type: float
+    unit: "cm"
+    nullable: true
+    minimum: 0
+    description: Snowfall accumulated during the preceding hour.
+
+  - name: weather_code
+    type: integer
+    nullable: true
+    description: WMO weather interpretation code describing the weather condition.
+
+  - name: wind_speed_10m_kmh
+    type: float
+    unit: "km/h"
+    nullable: true
+    minimum: 0
+    description: Wind speed measured or estimated ten metres above ground.
+
+  - name: wind_gusts_10m_kmh
+    type: float
+    unit: "km/h"
+    nullable: true
+    minimum: 0
+    description: Wind-gust speed measured or estimated ten metres above ground.
+
+  - name: latitude
+    type: float
+    unit: degrees
+    nullable: false
+    minimum: -90
+    maximum: 90
+    description: Latitude of the weather grid cell returned by Open-Meteo.
+
+  - name: longitude
+    type: float
+    unit: degrees
+    nullable: false
+    minimum: -180
+    maximum: 180
+    description: Longitude of the weather grid cell returned by Open-Meteo.
+
+validation:
+  expected_frequency: hourly
+  timestamps_must_be_unique: true
+  timestamps_must_be_sorted: true
+  precipitation_represents: preceding_hour_sum
+  rain_represents: preceding_hour_sum
+  snowfall_represents: preceding_hour_sum
