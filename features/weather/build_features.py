@@ -85,12 +85,18 @@ def _validate_input(df: pd.DataFrame) -> None:
 
 def _nullable_flag(values: pd.Series, threshold: float) -> pd.Series:
     """Compare values to a threshold without treating missing data as false."""
-    return values.gt(threshold).mask(values.isna()).astype("boolean")
-
+    #mark values above the threshold as true but preserve missing measurements as unknown
+    #gt = greater than
+    #mask converts None values to <NA>
+    return values.gt(threshold).mask(values.isna()).astype("boolean") 
 
 def _add_lookback_features(group: pd.DataFrame) -> pd.DataFrame:
     """Add past-and-current features for one weather location."""
+
+    #group contains weather observations for one location
+    #sort values by timestamp and copy to new df 
     group = group.sort_values("timestamp_utc").copy()
+    #calculate diff from each timestamp to timestamp before 
     elapsed = group["timestamp_utc"].diff()
 
     group["temperature_change_1h_c"] = (
@@ -99,18 +105,21 @@ def _add_lookback_features(group: pd.DataFrame) -> pd.DataFrame:
         .where(elapsed.eq(pd.Timedelta(hours=1)))
     )
 
+    #timestamp now becomes dataframe index
+    #index by rain and create rolling for every three hours
     indexed = group.set_index("timestamp_utc")
     group["precipitation_3h_mm"] = (
         indexed["precipitation_mm"]
         .rolling("3h", min_periods=3)
         .sum()
-        .to_numpy()
+        .to_numpy() #return values to array
     )
+
     group["precipitation_24h_mm"] = (
         indexed["precipitation_mm"]
         .rolling("24h", min_periods=24)
         .sum()
-        .to_numpy()
+        .to_numpy() 
     )
     group["snowfall_24h_cm"] = (
         indexed["snowfall_cm"]
@@ -148,6 +157,8 @@ def build_weather_features(
         dropna=False,
         group_keys=False,
     )
+
+    #processesing the rows and combined to one clean dataframe
     featured = pd.concat(
         [_add_lookback_features(group) for _, group in location_groups],
         ignore_index=True,
