@@ -23,6 +23,13 @@ CHICAGO_LATITUDE = 41.8781
 CHICAGO_LONGITUDE = -87.6298
 
 REQUEST_TIMEOUT_SECONDS = 30
+NONNEGATIVE_HOURLY_VARIABLES = [
+    "precipitation",
+    "rain",
+    "snowfall",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+]
 
 def parse_date(value: str) -> date:
     """Parse an ISO-formatted date supplied on the command line."""
@@ -130,6 +137,17 @@ def response_to_dataframe(response: requests.Response) -> pd.DataFrame:
         errors="raise",
     )
 
+    humidity = pd.to_numeric(
+        df["relative_humidity_2m"], errors="raise"
+    ).dropna()
+    if not humidity.between(0, 100).all():
+        raise ValueError("relative_humidity_2m must be between 0 and 100.")
+
+    for column in NONNEGATIVE_HOURLY_VARIABLES:
+        values = pd.to_numeric(df[column], errors="raise").dropna()
+        if (values < 0).any():
+            raise ValueError(f"{column} cannot contain negative values.")
+
     df = df.sort_values("timestamp_utc").reset_index(drop=True)
 
     if df["timestamp_utc"].duplicated().any():
@@ -202,4 +220,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

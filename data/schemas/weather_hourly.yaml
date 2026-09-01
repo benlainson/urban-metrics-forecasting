@@ -2,13 +2,15 @@ name: weather_hourly
 version: 1
 
 description: >
-  Normalized hourly weather observations for Chicago. This dataset is
-  produced from Open-Meteo historical weather responses and is intended
+  Normalized hourly weather values for Chicago. This contract is shared by
+  Open-Meteo historical observations and current forecasts and is intended
   for joining with transit and energy data.
 
 source:
   provider: Open-Meteo
-  endpoint: https://archive-api.open-meteo.com/v1/archive
+  endpoints:
+    historical: https://archive-api.open-meteo.com/v1/archive
+    forecast: https://api.open-meteo.com/v1/forecast
 
 grain: One row per weather location per UTC hour
 
