@@ -8,9 +8,9 @@ Three of us, three domains, each owning an ingestion → features → model vert
 
 | Person | Domain | Owns |
 |---|---|---|
-| _TBD_ | Transit | `ingestion/transit/`, `features/transit/`, `models/transit/` | Ben
-| _TBD_ | Energy | `ingestion/energy/`, `features/energy/`, `models/energy/` | Nick
-| _TBD_ | Weather & Anomalies | `ingestion/weather/`, `features/weather/`, `models/weather/` | Andrei 
+| Ben | Transit | `ingestion/transit/`, `features/transit/`, `models/transit/` |
+| Nick | Energy | `ingestion/energy/`, `features/energy/`, `models/energy/` |
+| Andrei | Weather & Anomalies | `ingestion/weather/`, `features/weather/`, `models/weather/` |
 
 Fill in names above. Shared/integration folders (`data/`, `serving/`, `frontend/`, `.github/workflows/`) are joint-owned — coordinate before restructuring them.
 
