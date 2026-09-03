@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 
 EIA_BASE_URL = "https://api.eia.gov/v2/electricity/rto/region-data/data/"
 DEFAULT_RESPONDENT = "PJM"   # Balancing authority covering ComEd / Chicago
@@ -98,10 +99,13 @@ def main():
     parser.add_argument("--end", default=None, help="End date YYYY-MM-DD (optional)")
     args = parser.parse_args()
 
+    # Resolve from the script location so loading does not depend on shell cwd.
+    # Keep shell/CI values authoritative when both sources define a key.
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
     api_key = os.environ.get("EIA_API_KEY")
     if not api_key:
-        print("ERROR: EIA_API_KEY environment variable not set.")
-        print("Register at https://www.eia.gov/opendata/ and export EIA_API_KEY=your_key")
+        print("ERROR: EIA_API_KEY not found in the environment or repository .env file.")
+        print("Add EIA_API_KEY=your_key to the repository .env, or export it in your shell.")
         sys.exit(1)
 
     print(f"Fetching hourly demand for respondent={args.respondent} "

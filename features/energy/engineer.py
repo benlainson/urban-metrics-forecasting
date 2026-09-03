@@ -7,7 +7,8 @@ the transit feature engineering step in the project plan: calendar
 features, lag features, rolling averages.
 
 Also folds in:
-  - Outlier cleaning (see notebooks/02_eda_energy.ipynb for why this is
+  - Hourly timeline regularization and outlier masking (see
+    notebooks/02_eda_energy.ipynb for why this is
     needed — the raw EIA pull can contain a small number of corrupted
     readings that are orders of magnitude too large).
   - An optional join against weather features, per CLAUDE.md's
@@ -27,6 +28,7 @@ Usage:
 """
 
 import argparse
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -43,11 +45,28 @@ DEFAULT_MAX_DEMAND = 300_000
 
 
 def clean_outliers(df: pd.DataFrame, max_demand: float) -> pd.DataFrame:
+    """Keep a complete UTC hourly timeline; invalid demand stays missing."""
+    if not math.isfinite(max_demand) or max_demand <= 0:
+        raise ValueError("max_demand must be finite and positive.")
+    if df.empty or not {"period", "value"}.issubset(df.columns):
+        raise ValueError("Demand data must contain rows and period/value columns.")
+    df = df.copy()
+    df["period"] = pd.to_datetime(df["period"], utc=True, errors="raise")
+    if df["period"].isna().any() or df["period"].duplicated().any():
+        raise ValueError("Demand timestamps must be present and unique.")
+    if not df["period"].eq(df["period"].dt.floor("h")).all():
+        raise ValueError("Demand timestamps must fall on whole UTC hours.")
+    if "respondent" in df and df["respondent"].nunique() != 1:
+        raise ValueError("Build features for exactly one balancing authority at a time.")
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    invalid = ~df["value"].between(0, max_demand, inclusive="left")
+    df.loc[invalid, "value"] = float("nan")
+    df = df.set_index("period").sort_index()
     before = len(df)
-    df = df[df["value"] < max_demand].copy()
-    dropped = before - len(df)
-    if dropped:
-        print(f"  Dropped {dropped} outlier rows (value >= {max_demand:,})")
+    df = df.reindex(pd.date_range(df.index.min(), df.index.max(), freq="h", name="period"))
+    print(f"  Masked {int(invalid.sum())} invalid/missing demand values; "
+          f"inserted {len(df) - before} missing hours (no interpolation)")
+    df = df.reset_index()
     return df
 
 
@@ -63,7 +82,10 @@ def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_lag_and_rolling_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Requires the complete hourly timeline produced by clean_outliers."""
     df = df.sort_values("period").reset_index(drop=True)
+    if not df["period"].diff().dropna().eq(pd.Timedelta(hours=1)).all():
+        raise ValueError("Regularize the hourly timeline before calculating lags.")
 
     # Lag features — what demand was 1 hour ago, 1 day ago (same hour), 1 week ago (same hour+day)
     df["demand_lag_1"] = df["value"].shift(1)
@@ -91,12 +113,20 @@ def load_weather_features() -> pd.DataFrame | None:
 def join_weather(df: pd.DataFrame, weather: pd.DataFrame | None) -> pd.DataFrame:
     if weather is None:
         return df
+    weather = weather.copy()
+    if "period" not in weather.columns and "timestamp_utc" in weather.columns:
+        weather = weather.rename(columns={"timestamp_utc": "period"})
     if "period" not in weather.columns:
         print("  WARNING: weather features have no 'period' column to join on — skipping join. "
               "Coordinate with the weather teammate on a shared join key.")
         return df
     before_cols = set(df.columns)
-    df = df.merge(weather, on="period", how="left")
+    weather["period"] = pd.to_datetime(weather["period"], utc=True)
+    if weather["period"].isna().any() or weather["period"].duplicated().any():
+        raise ValueError("Weather must have exactly one observation per timestamp; select a location first.")
+    df = df.copy()
+    df["period"] = pd.to_datetime(df["period"], utc=True)
+    df = df.merge(weather, on="period", how="left", validate="one_to_one")
     new_cols = set(df.columns) - before_cols
     print(f"  Joined weather features, added columns: {sorted(new_cols)}")
     return df
@@ -131,7 +161,9 @@ def load_community_area_weighting() -> pd.DataFrame | None:
     return weighting.sort_values("community_area_weight", ascending=False)
 
 
-def build_features(df: pd.DataFrame, max_demand: float) -> pd.DataFrame:
+def build_features(
+    df: pd.DataFrame, max_demand: float, *, include_weather: bool = True
+) -> pd.DataFrame:
     print("Cleaning outliers...")
     df = clean_outliers(df, max_demand)
 
@@ -141,16 +173,17 @@ def build_features(df: pd.DataFrame, max_demand: float) -> pd.DataFrame:
     print("Adding lag / rolling features...")
     df = add_lag_and_rolling_features(df)
 
-    print("Loading weather features (if available)...")
-    weather = load_weather_features()
-    df = join_weather(df, weather)
+    if include_weather:
+        print("Loading weather features (if available)...")
+        weather = load_weather_features()
+        df = join_weather(df, weather)
 
-    # Drop rows with NaNs introduced by lag/rolling features (first ~168 hours)
-    # and by outlier removal creating small gaps.
+    # Only discard examples AFTER calculating features on the complete timeline.
+    # A missing reading invalidates windows containing it, including later rows.
     before = len(df)
-    df = df.dropna(subset=["demand_lag_1", "demand_lag_24", "demand_lag_168",
+    df = df.dropna(subset=["value", "demand_lag_1", "demand_lag_24", "demand_lag_168",
                             "demand_rolling_24", "demand_rolling_168"])
-    print(f"  Dropped {before - len(df)} rows with NaN lag/rolling values (expected — warm-up period)")
+    print(f"  Excluded {before - len(df)} examples with missing targets or history")
 
     return df
 
@@ -159,18 +192,20 @@ def main():
     parser = argparse.ArgumentParser(description="Build energy demand features.")
     parser.add_argument("--max-demand", type=float, default=DEFAULT_MAX_DEMAND,
                          help=f"Upper bound for valid hourly demand (default: {DEFAULT_MAX_DEMAND:,})")
+    parser.add_argument("--skip-weather", action="store_true",
+                        help="Build demand-only features for the first forecasting baseline.")
     args = parser.parse_args()
 
     if not RAW_DEMAND_PATH.exists():
         print(f"ERROR: {RAW_DEMAND_PATH} not found. "
               f"Run ingestion/energy/fetch_eia_demand.py first.")
-        return
+        parser.exit(1)
 
     print(f"Loading raw demand data from {RAW_DEMAND_PATH}...")
     df = pd.read_parquet(RAW_DEMAND_PATH)
     print(f"  {df.shape[0]} rows loaded")
 
-    features = build_features(df, args.max_demand)
+    features = build_features(df, args.max_demand, include_weather=not args.skip_weather)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     features.to_parquet(OUTPUT_PATH, index=False)
