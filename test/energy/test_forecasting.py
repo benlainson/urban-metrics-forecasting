@@ -8,7 +8,9 @@ import pandas as pd
 from features.energy.engineer import (
     add_lag_and_rolling_features, build_features, clean_outliers, join_weather,
 )
-from models.energy.train_xgboost import FEATURE_COLUMNS, regression_metrics, split_chronologically
+from models.energy.train_xgboost import (
+    FEATURE_COLUMNS, describe_demand_series, regression_metrics, split_chronologically,
+)
 
 
 def demand_frame(hours=600):
@@ -67,6 +69,21 @@ class FeatureTests(unittest.TestCase):
         raw.loc[0, "period"] += pd.Timedelta(minutes=30)
         with self.assertRaises(ValueError):
             clean_outliers(raw, 300000)
+
+    def test_subregion_series_is_validated_without_pjm_respondent_column(self):
+        raw = demand_frame().drop(columns="respondent")
+        raw["parent"] = "PJM"
+        raw["subba"] = "CE"
+        raw["subba-name"] = "Commonwealth Edison zone"
+        raw["value"] = 10000.0 + np.arange(len(raw))
+        features = build_features(raw, 50000, include_weather=False)
+        self.assertFalse(features.empty)
+        description = describe_demand_series(raw)
+        self.assertEqual(description["code"], "CE")
+        self.assertEqual(description["parent"], "PJM")
+        raw.loc[0, "subba"] = "OTHER"
+        with self.assertRaises(ValueError):
+            clean_outliers(raw, 50000)
         raw = demand_frame()
         raw.loc[0, "respondent"] = "OTHER"
         with self.assertRaises(ValueError):

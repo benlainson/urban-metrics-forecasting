@@ -2,8 +2,10 @@
 
 Owner: Nick.
 
-One-hour-ahead **PJM-wide** electricity demand forecasting. Neighborhood weights
-are a separate approximation and are not training targets or model inputs.
+One-hour-ahead EIA electricity demand forecasting. The trainer supports one
+balancing-authority series such as PJM or one subregion such as Commonwealth
+Edison (`parent=PJM`, `subba=CE`). Neighborhood weights are a separate
+approximation and are not training targets or model inputs.
 
 ## Run training
 
@@ -22,6 +24,10 @@ The raw input must already exist at `data/raw/energy/eia_demand_pjm.parquet`.
 The trainer rebuilds features from raw data every time, so you do not need to run
 the feature script first. Training is local, CPU-only, and uses no API key or
 external tracking service.
+
+For the Chicago-area ComEd-zone experiment, use
+`data/raw/energy/eia_demand_comed.parquet`, a separate output directory, and
+`--max-demand 50000`. The ingestion README contains the full command.
 
 Outputs are saved under `data/processed/energy/xgboost/` (gitignored). Re-running
 overwrites that run; use `--output data/processed/energy/another_run` to keep it.

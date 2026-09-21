@@ -19,6 +19,7 @@ subdivision of hourly demand. See `energy_chicago_benchmarking.md` for
 the complementary annual/building-level dataset used to approximate
 spatial granularity.
 
-**Nullability:** `value` can be null for a small number of hours
-(reporting gaps) — handle via interpolation or drop, decide in
-`features/energy/`.
+**Nullability:** `value` can be null for a small number of hours. Feature
+engineering restores the complete UTC timeline and leaves missing/invalid demand
+as null. It does not interpolate targets; examples with incomplete histories are
+excluded after lag and rolling features are calculated.

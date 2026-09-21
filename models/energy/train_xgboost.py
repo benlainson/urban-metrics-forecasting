@@ -1,4 +1,4 @@
-"""Train and evaluate a rolling one-hour-ahead PJM demand forecast.
+"""Train and evaluate a rolling one-hour-ahead energy demand forecast.
 
 Run from the repository root: python -m models.energy.train_xgboost
 Each row predicts demand at t with calendar information for t and demand
@@ -35,6 +35,30 @@ BASELINES = {
     "yesterday": "demand_lag_24",
     "last_week": "demand_lag_168",
 }
+
+
+def describe_demand_series(raw: pd.DataFrame) -> dict[str, str]:
+    """Validate and describe one EIA balancing-authority or subregion series."""
+    if "subba" in raw.columns:
+        required = {"parent", "subba"}
+        if not required.issubset(raw.columns):
+            raise ValueError("Subregion demand must include parent and subba columns.")
+        keys = raw[["parent", "subba"]].drop_duplicates()
+        if len(keys) != 1:
+            raise ValueError("Training requires exactly one EIA demand subregion.")
+        parent, code = keys.iloc[0]
+        name = str(raw["subba-name"].iloc[0]) if "subba-name" in raw else str(code)
+        return {"kind": "subregion", "code": str(code), "name": name,
+                "parent": str(parent), "label": f"{name} ({code})"}
+    if "respondent" in raw.columns:
+        codes = raw["respondent"].dropna().unique()
+        if len(codes) != 1:
+            raise ValueError("Training requires exactly one EIA balancing authority.")
+        code = str(codes[0])
+        name = str(raw["respondent-name"].iloc[0]) if "respondent-name" in raw else code
+        return {"kind": "balancing_authority", "code": code, "name": name,
+                "parent": "", "label": f"{name} ({code})"}
+    raise ValueError("Input must identify its series with respondent or parent/subba columns.")
 
 
 def utc_hour(value: str) -> pd.Timestamp:
@@ -90,7 +114,7 @@ def evaluate(model, frame: pd.DataFrame, peak_threshold: float):
     return predictions, scores
 
 
-def write_plot(predictions: pd.DataFrame, output: Path) -> None:
+def write_plot(predictions: pd.DataFrame, output: Path, target_label: str) -> None:
     # Avoid a GUI backend and unwritable user-level caches on headless machines.
     with tempfile.TemporaryDirectory(prefix="energy-matplotlib-") as cache:
         os.environ.setdefault("MPLCONFIGDIR", cache)
@@ -106,7 +130,7 @@ def write_plot(predictions: pd.DataFrame, output: Path) -> None:
             ("previous_hour", "Previous-hour baseline", "#b47b36"),
         ]:
             axes[0].plot(last_week.period, last_week[column], label=label, color=color, linewidth=1.3)
-        axes[0].set(title="PJM demand: final seven days of held-out test", ylabel="Hourly energy (MWh)", xlabel="Target hour (UTC)")
+        axes[0].set(title=f"{target_label} demand: final seven days of held-out test", ylabel="Hourly energy (MWh)", xlabel="Target hour (UTC)")
         axes[0].legend(loc="upper left", ncol=3)
         local_hour = predictions.period.dt.tz_convert("America/Chicago").dt.hour
         for name in ["xgboost", *BASELINES]:
@@ -123,7 +147,7 @@ def write_plot(predictions: pd.DataFrame, output: Path) -> None:
 def write_report(run: dict, output: Path) -> None:
     lines = [
         "# Energy model training report", "",
-        "One-hour-ahead PJM-wide demand forecast, evaluated at successive hourly origins.",
+        f"One-hour-ahead {run['series']['label']} demand forecast, evaluated at successive hourly origins.",
         "Past actual demand is assumed available through t-1 for every prediction at t.",
         "Weather and neighborhood weights are not model inputs. Units: hourly MWh.", "",
         "## Chronological splits", "",
@@ -157,16 +181,15 @@ def write_report(run: dict, output: Path) -> None:
               "## Limits", "",
               "This is a rolling one-step backtest, not a month-ahead or 24-hour batch forecast. "
               "Actual prior-hour demand is supplied as each hour passes; production must account for reporting delays.",
-              "December 2023 alone does not establish summer or current-day accuracy. "
+              "One historical holdout does not establish future production accuracy. "
               "Reserve another period before further tuning based on these test results.",
-              "The target covers PJM, not individual Chicago neighborhoods.", ""]
+              f"The target is the EIA {run['series']['kind'].replace('_', ' ')} {run['series']['label']}, not individual Chicago neighborhoods.", ""]
     (output / "report.md").write_text("\n".join(lines))
 
 
 def train(args) -> dict:
     raw = pd.read_parquet(args.input)
-    if "respondent" not in raw or not raw.respondent.eq("PJM").all():
-        raise ValueError("This baseline expects a single PJM demand series.")
+    series = describe_demand_series(raw)
     # Always rebuild from raw data so old, compressed-timeline features cannot leak in.
     features = build_features(raw, args.max_demand, include_weather=False)
     splits = split_chronologically(features, args.train_start, args.validation_start, args.test_start, args.test_end)
@@ -193,7 +216,8 @@ def train(args) -> dict:
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "input": str(args.input.resolve()),
         "input_sha256": hashlib.sha256(args.input.read_bytes()).hexdigest(),
-        "target": "PJM demand at period t (MWh)", "horizon_hours": 1,
+        "target": f"{series['label']} demand at period t (MWh)",
+        "series": series, "horizon_hours": 1,
         "history_available_through": "t-1; rolling one-step evaluation",
         "feature_columns": FEATURE_COLUMNS, "calendar_timezone": "UTC",
         "max_demand": args.max_demand, "parameters": params,
@@ -224,7 +248,7 @@ def train(args) -> dict:
         "importance", ascending=False
     ).to_csv(args.output / "feature_importance.csv", index=False)
     (args.output / "metrics.json").write_text(json.dumps(run, indent=2, allow_nan=False) + "\n")
-    write_plot(predictions, args.output)
+    write_plot(predictions, args.output, series["label"])
     write_report(run, args.output)
     print("\nHeld-out test (MWh; lower is better):")
     for name, scores in run["scores"]["test"].items():

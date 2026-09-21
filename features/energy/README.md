@@ -16,6 +16,15 @@ For demand-only features, run from the repository root:
 .venv/bin/python features/energy/engineer.py --skip-weather
 ```
 
+For Commonwealth Edison features, select its raw input and a separate output:
+
+```bash
+.venv/bin/python features/energy/engineer.py \
+  --input data/raw/energy/eia_demand_comed.parquet \
+  --output data/processed/energy/features_comed.parquet \
+  --max-demand 50000 --skip-weather
+```
+
 This writes `data/processed/energy/features.parquet` and, if benchmarking data
 exists, a separate community-area weighting table. That table is not measured
 neighborhood hourly demand and is not used by the initial model.

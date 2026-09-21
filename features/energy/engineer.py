@@ -1,8 +1,7 @@
 """
 features/energy/engineer.py
 
-Builds model-ready features from raw hourly PJM grid demand
-(data/raw/energy/eia_demand_pjm.parquet), following the same pattern as
+Builds model-ready features from one raw hourly EIA demand series, following the same pattern as
 the transit feature engineering step in the project plan: calendar
 features, lag features, rolling averages.
 
@@ -58,6 +57,11 @@ def clean_outliers(df: pd.DataFrame, max_demand: float) -> pd.DataFrame:
         raise ValueError("Demand timestamps must fall on whole UTC hours.")
     if "respondent" in df and df["respondent"].nunique() != 1:
         raise ValueError("Build features for exactly one balancing authority at a time.")
+    if "subba" in df:
+        if "parent" not in df:
+            raise ValueError("Subregion demand must include its parent balancing authority.")
+        if df[["parent", "subba"]].drop_duplicates().shape[0] != 1:
+            raise ValueError("Build features for exactly one subregion at a time.")
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
     invalid = ~df["value"].between(0, max_demand, inclusive="left")
     df.loc[invalid, "value"] = float("nan")
@@ -190,26 +194,28 @@ def build_features(
 
 def main():
     parser = argparse.ArgumentParser(description="Build energy demand features.")
+    parser.add_argument("--input", type=Path, default=RAW_DEMAND_PATH,
+                        help="One raw EIA balancing-authority or subregion parquet file.")
+    parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
     parser.add_argument("--max-demand", type=float, default=DEFAULT_MAX_DEMAND,
                          help=f"Upper bound for valid hourly demand (default: {DEFAULT_MAX_DEMAND:,})")
     parser.add_argument("--skip-weather", action="store_true",
                         help="Build demand-only features for the first forecasting baseline.")
     args = parser.parse_args()
 
-    if not RAW_DEMAND_PATH.exists():
-        print(f"ERROR: {RAW_DEMAND_PATH} not found. "
-              f"Run ingestion/energy/fetch_eia_demand.py first.")
+    if not args.input.exists():
+        print(f"ERROR: {args.input} not found. Run the matching energy ingestion script first.")
         parser.exit(1)
 
-    print(f"Loading raw demand data from {RAW_DEMAND_PATH}...")
-    df = pd.read_parquet(RAW_DEMAND_PATH)
+    print(f"Loading raw demand data from {args.input}...")
+    df = pd.read_parquet(args.input)
     print(f"  {df.shape[0]} rows loaded")
 
     features = build_features(df, args.max_demand, include_weather=not args.skip_weather)
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    features.to_parquet(OUTPUT_PATH, index=False)
-    print(f"\nSaved {features.shape[0]} rows x {features.shape[1]} cols to {OUTPUT_PATH}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    features.to_parquet(args.output, index=False)
+    print(f"\nSaved {features.shape[0]} rows x {features.shape[1]} cols to {args.output}")
     print("\nColumns:", list(features.columns))
     print("\nHead:")
     print(features.head())
