@@ -68,6 +68,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path for the normalized latest-forecast Parquet file.",
     )
+    parser.add_argument(
+        "--processed-archive-dir",
+        type=Path,
+        default=None,
+        help="Optional directory for immutable normalized forecast runs.",
+    )
     return parser.parse_args()
 
 
@@ -104,6 +110,61 @@ def response_to_normalized_dataframe(
     return normalize_weather(payload)
 
 
+def add_forecast_provenance(
+    forecast: pd.DataFrame,
+    retrieved_at: datetime,
+) -> pd.DataFrame:
+    """Add retrieval and lead-time metadata and remove already-past rows.
+
+    ``timestamp_utc`` remains the forecast valid time so the result stays
+    compatible with the shared weather feature builder. Open-Meteo's daily
+    forecast response begins at midnight UTC, so a daytime retrieval can
+    contain hours that have already passed; those rows are not point-in-time
+    forecasts and are excluded here.
+    """
+    if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
+        raise ValueError("retrieved_at must be timezone-aware.")
+
+    if not isinstance(forecast["timestamp_utc"].dtype, pd.DatetimeTZDtype):
+        raise ValueError("timestamp_utc must be a timezone-aware datetime column.")
+
+    retrieved_at_utc = pd.Timestamp(retrieved_at).tz_convert("UTC")
+    forecast_run = forecast.copy(deep=True)
+    forecast_run["timestamp_utc"] = forecast_run[
+        "timestamp_utc"
+    ].dt.tz_convert("UTC")
+    forecast_run = forecast_run[
+        forecast_run["timestamp_utc"] >= retrieved_at_utc
+    ].copy()
+
+    if forecast_run.empty:
+        raise ValueError("Forecast response contains no future valid times.")
+
+    forecast_run.insert(0, "retrieved_at_utc", retrieved_at_utc)
+    forecast_run.insert(
+        2,
+        "lead_time_hours",
+        (
+            forecast_run["timestamp_utc"]
+            - forecast_run["retrieved_at_utc"]
+        ).dt.total_seconds()
+        / 3600,
+    )
+
+    primary_key = [
+        "retrieved_at_utc",
+        "timestamp_utc",
+        "latitude",
+        "longitude",
+    ]
+    if forecast_run.duplicated(primary_key).any():
+        raise ValueError("Forecast run contains duplicate primary keys.")
+    if (forecast_run["lead_time_hours"] < 0).any():
+        raise ValueError("Forecast run contains a negative lead time.")
+
+    return forecast_run.reset_index(drop=True)
+
+
 def save_raw_response(
     response: requests.Response,
     output_dir: Path,
@@ -122,14 +183,42 @@ def save_raw_response(
     return output_path
 
 
+def save_processed_forecast(
+    forecast_run: pd.DataFrame,
+    latest_output_path: Path,
+    archive_output_dir: Path,
+    retrieved_at: datetime,
+) -> Path:
+    """Save both the latest forecast and a timestamped normalized run."""
+    if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
+        raise ValueError("retrieved_at must be timezone-aware.")
+
+    timestamp = retrieved_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive_output_path = (
+        archive_output_dir
+        / f"open_meteo_forecast_chicago_{timestamp}.parquet"
+    )
+    if archive_output_path.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite archived forecast: {archive_output_path}"
+        )
+
+    save_processed_data(forecast_run, archive_output_path)
+    save_processed_data(forecast_run, latest_output_path)
+    return archive_output_path
+
+
 def print_summary(
     df: pd.DataFrame,
     raw_output_path: Path,
-    processed_output_path: Path,
+    latest_output_path: Path,
+    archive_output_path: Path,
 ) -> None:
     print(f"Saved raw forecast to: {raw_output_path}")
-    print(f"Saved normalized forecast to: {processed_output_path}")
+    print(f"Saved latest normalized forecast to: {latest_output_path}")
+    print(f"Archived normalized forecast to: {archive_output_path}")
     print(f"Rows: {len(df):,}")
+    print(f"Retrieved at: {df['retrieved_at_utc'].iloc[0]}")
     print(
         "Valid-time range: "
         f"{df['timestamp_utc'].min()} to {df['timestamp_utc'].max()}"
@@ -152,20 +241,36 @@ def main() -> None:
         / "weather"
         / "open_meteo_forecast_latest.parquet"
     )
+    processed_archive_dir = args.processed_archive_dir or (
+        repo_root / "data" / "processed" / "weather" / "forecasts"
+    )
 
-    retrieved_at = datetime.now(timezone.utc)
     response = fetch_forecast(args.forecast_days)
-    forecast = response_to_normalized_dataframe(response)
+    retrieved_at = datetime.now(timezone.utc)
+    normalized_forecast = response_to_normalized_dataframe(response)
+    forecast_run = add_forecast_provenance(
+        normalized_forecast,
+        retrieved_at,
+    )
 
     raw_output_path = save_raw_response(
         response=response,
         output_dir=raw_output_dir,
         retrieved_at=retrieved_at,
     )
-    save_processed_data(forecast, processed_output_path)
-    print_summary(forecast, raw_output_path, processed_output_path)
+    archive_output_path = save_processed_forecast(
+        forecast_run=forecast_run,
+        latest_output_path=processed_output_path,
+        archive_output_dir=processed_archive_dir,
+        retrieved_at=retrieved_at,
+    )
+    print_summary(
+        forecast_run,
+        raw_output_path,
+        processed_output_path,
+        archive_output_path,
+    )
 
 
 if __name__ == "__main__":
     main()
-

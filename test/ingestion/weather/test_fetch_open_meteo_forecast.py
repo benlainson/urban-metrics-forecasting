@@ -9,9 +9,11 @@ import requests
 from features.weather.normalize_open_meteo import OUTPUT_COLUMNS
 from ingestion.weather.fetch_open_meteo_forecast import (
     FORECAST_URL,
+    add_forecast_provenance,
     fetch_forecast,
     parse_forecast_days,
     response_to_normalized_dataframe,
+    save_processed_forecast,
     save_raw_response,
 )
 from ingestion.weather.fetch_open_meteo_history import HOURLY_VARIABLES
@@ -98,6 +100,58 @@ def test_forecast_uses_the_normalized_historical_schema():
     assert result["weather_code"].dtype == "Int64"
 
 
+def test_forecast_provenance_removes_past_rows_and_calculates_lead_time():
+    response = make_mock_response(make_forecast_payload())
+    normalized = response_to_normalized_dataframe(response)
+    retrieved_at = datetime(2026, 8, 30, 15, 30, tzinfo=timezone.utc)
+
+    result = add_forecast_provenance(normalized, retrieved_at)
+
+    assert result["timestamp_utc"].min() == pd.Timestamp(
+        "2026-08-30T16:00:00Z"
+    )
+    assert result["retrieved_at_utc"].nunique() == 1
+    assert result["retrieved_at_utc"].iloc[0] == pd.Timestamp(retrieved_at)
+    assert result["lead_time_hours"].iloc[0] == pytest.approx(0.5)
+    assert (result["timestamp_utc"] >= result["retrieved_at_utc"]).all()
+    assert (result["lead_time_hours"] >= 0).all()
+
+
+def test_forecast_provenance_does_not_modify_normalized_input():
+    response = make_mock_response(make_forecast_payload())
+    normalized = response_to_normalized_dataframe(response)
+    original = normalized.copy(deep=True)
+
+    add_forecast_provenance(
+        normalized,
+        datetime(2026, 8, 30, 15, 30, tzinfo=timezone.utc),
+    )
+
+    pd.testing.assert_frame_equal(normalized, original)
+
+
+def test_forecast_provenance_requires_aware_retrieval_time():
+    response = make_mock_response(make_forecast_payload())
+    normalized = response_to_normalized_dataframe(response)
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        add_forecast_provenance(
+            normalized,
+            datetime(2026, 8, 30, 15, 30),
+        )
+
+
+def test_forecast_provenance_rejects_run_without_future_rows():
+    response = make_mock_response(make_forecast_payload(periods=1))
+    normalized = response_to_normalized_dataframe(response)
+
+    with pytest.raises(ValueError, match="no future valid times"):
+        add_forecast_provenance(
+            normalized,
+            datetime(2026, 8, 31, tzinfo=timezone.utc),
+        )
+
+
 def test_missing_hourly_variable_raises_error():
     payload = make_forecast_payload()
     del payload["hourly"]["snowfall"]
@@ -125,6 +179,61 @@ def test_save_raw_response_requires_aware_retrieval_time(tmp_path):
             response,
             tmp_path,
             datetime(2026, 8, 30, 15, 4, 5),
+        )
+
+
+@patch("ingestion.weather.fetch_open_meteo_forecast.save_processed_data")
+def test_save_processed_forecast_writes_latest_and_timestamped_run(
+    mock_save_processed_data,
+    tmp_path,
+):
+    response = make_mock_response(make_forecast_payload())
+    retrieved_at = datetime(2026, 8, 30, 15, 30, tzinfo=timezone.utc)
+    normalized = response_to_normalized_dataframe(response)
+    forecast_run = add_forecast_provenance(normalized, retrieved_at)
+    latest_path = tmp_path / "latest.parquet"
+    archive_dir = tmp_path / "forecasts"
+
+    archive_path = save_processed_forecast(
+        forecast_run,
+        latest_path,
+        archive_dir,
+        retrieved_at,
+    )
+
+    assert archive_path.name == (
+        "open_meteo_forecast_chicago_20260830T153000Z.parquet"
+    )
+    assert mock_save_processed_data.call_count == 2
+    first_call, second_call = mock_save_processed_data.call_args_list
+    pd.testing.assert_frame_equal(
+        first_call.args[0],
+        forecast_run,
+    )
+    assert first_call.args[1] == archive_path
+    pd.testing.assert_frame_equal(second_call.args[0], forecast_run)
+    assert second_call.args[1] == latest_path
+
+
+def test_save_processed_forecast_refuses_to_overwrite_archive(tmp_path):
+    response = make_mock_response(make_forecast_payload())
+    retrieved_at = datetime(2026, 8, 30, 15, 30, tzinfo=timezone.utc)
+    normalized = response_to_normalized_dataframe(response)
+    forecast_run = add_forecast_provenance(normalized, retrieved_at)
+    archive_dir = tmp_path / "forecasts"
+    archive_dir.mkdir()
+    archive_path = (
+        archive_dir
+        / "open_meteo_forecast_chicago_20260830T153000Z.parquet"
+    )
+    archive_path.write_bytes(b"existing archived run")
+
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        save_processed_forecast(
+            forecast_run,
+            tmp_path / "latest.parquet",
+            archive_dir,
+            retrieved_at,
         )
 
 
