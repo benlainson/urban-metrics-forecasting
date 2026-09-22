@@ -24,3 +24,20 @@ valid. Hours earlier than the retrieval time are excluded so archived runs can
 be used safely in backtests. The processed `latest` file is replaced on each
 successful run for downstream inference, while timestamped run files remain
 available for point-in-time evaluation.
+
+## Historical 24/48-hour forecasts
+
+`fetch_open_meteo_previous_runs.py` downloads forecasts aligned to fixed
+24-hour and 48-hour lead times. These are separate from the continuously
+updated live forecast archive and are intended for aggregate skill evaluation.
+
+```bash
+.venv/bin/python -m ingestion.weather.fetch_open_meteo_previous_runs \
+  --start-date 2024-01-01 \
+  --end-date 2024-12-31
+```
+
+The processed output is a long table with one row per valid hour and horizon.
+`forecast_reference_time_utc` is derived by subtracting the fixed horizon from
+the valid time; it is a comparison reference, not a claim about the exact model
+initialization timestamp.
