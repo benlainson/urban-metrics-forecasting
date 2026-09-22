@@ -1,0 +1,76 @@
+name: weather_previous_runs_hourly
+version: 1
+
+description: >
+  Historical Open-Meteo forecasts aligned to fixed 24- and 48-hour lead times
+  for point-in-time weather forecast evaluation.
+
+source:
+  provider: Open-Meteo
+  endpoint: https://previous-runs-api.open-meteo.com/v1/forecast
+
+grain: One row per valid UTC hour, lead-time horizon, and weather location
+
+primary_key:
+  - timestamp_utc
+  - lead_time_hours
+  - latitude
+  - longitude
+
+columns:
+  - name: timestamp_utc
+    type: datetime
+    timezone: UTC
+    nullable: false
+    description: Hour for which the forecast is valid.
+
+  - name: forecast_reference_time_utc
+    type: datetime
+    timezone: UTC
+    nullable: false
+    description: Valid time minus the fixed forecast lead time.
+
+  - name: lead_time_hours
+    type: integer
+    unit: hours
+    allowed_values: [24, 48]
+    nullable: false
+
+  - name: forecast_temperature_2m_c
+    type: float
+    unit: "°C"
+    nullable: true
+
+  - name: forecast_apparent_temperature_c
+    type: float
+    unit: "°C"
+    nullable: true
+
+  - name: forecast_precipitation_mm
+    type: float
+    unit: mm
+    nullable: true
+
+  - name: forecast_rain_mm
+    type: float
+    unit: mm
+    nullable: true
+
+  - name: forecast_snowfall_cm
+    type: float
+    unit: cm
+    nullable: true
+
+  - name: latitude
+    type: float
+    unit: degrees
+    nullable: false
+
+  - name: longitude
+    type: float
+    unit: degrees
+    nullable: false
+
+validation:
+  reference_time_must_precede_valid_time: true
+  rows_must_be_unique_by_primary_key: true

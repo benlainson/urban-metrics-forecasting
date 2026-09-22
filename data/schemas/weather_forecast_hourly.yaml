@@ -1,0 +1,111 @@
+name: weather_forecast_hourly
+version: 1
+
+description: >
+  Point-in-time-safe hourly Chicago weather forecasts. Each row records both
+  when the forecast was retrieved and the UTC hour for which it is valid.
+
+source:
+  provider: Open-Meteo
+  endpoint: https://api.open-meteo.com/v1/forecast
+
+grain: One row per forecast retrieval, weather location, and valid UTC hour
+
+primary_key:
+  - retrieved_at_utc
+  - timestamp_utc
+  - latitude
+  - longitude
+
+columns:
+  - name: retrieved_at_utc
+    type: datetime
+    format: ISO-8601
+    timezone: UTC
+    nullable: false
+    description: Time at which this forecast response was received.
+
+  - name: timestamp_utc
+    type: datetime
+    format: ISO-8601
+    timezone: UTC
+    nullable: false
+    description: Valid time of the forecast value.
+
+  - name: lead_time_hours
+    type: float
+    unit: hours
+    nullable: false
+    minimum: 0
+    description: Hours between forecast retrieval and valid time.
+
+  - name: temperature_2m_c
+    type: float
+    unit: "°C"
+    nullable: true
+
+  - name: relative_humidity_2m_pct
+    type: float
+    unit: "%"
+    nullable: true
+    minimum: 0
+    maximum: 100
+
+  - name: apparent_temperature_c
+    type: float
+    unit: "°C"
+    nullable: true
+
+  - name: precipitation_mm
+    type: float
+    unit: mm
+    nullable: true
+    minimum: 0
+
+  - name: rain_mm
+    type: float
+    unit: mm
+    nullable: true
+    minimum: 0
+
+  - name: snowfall_cm
+    type: float
+    unit: cm
+    nullable: true
+    minimum: 0
+
+  - name: weather_code
+    type: integer
+    nullable: true
+
+  - name: wind_speed_10m_kmh
+    type: float
+    unit: km/h
+    nullable: true
+    minimum: 0
+
+  - name: wind_gusts_10m_kmh
+    type: float
+    unit: km/h
+    nullable: true
+    minimum: 0
+
+  - name: latitude
+    type: float
+    unit: degrees
+    nullable: false
+    minimum: -90
+    maximum: 90
+
+  - name: longitude
+    type: float
+    unit: degrees
+    nullable: false
+    minimum: -180
+    maximum: 180
+
+validation:
+  valid_time_must_not_precede_retrieval: true
+  lead_time_must_be_nonnegative: true
+  timestamps_must_be_utc: true
+  rows_must_be_unique_by_primary_key: true
