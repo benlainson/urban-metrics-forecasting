@@ -23,3 +23,17 @@ Run from the repository root:
 ```
 
 This replaces `data/raw/energy/eia_demand_pjm.parquet` with the requested range.
+
+## Commonwealth Edison demand
+
+For a Chicago-focused target, fetch hourly demand for EIA's Commonwealth Edison
+subregion (`CE`) inside PJM:
+
+```bash
+.venv/bin/python ingestion/energy/fetch_eia_subregion_demand.py \
+  --parent PJM --subregion CE --start 2020-01-01 --end 2026-01-01
+```
+
+This writes `data/raw/energy/eia_demand_comed.parquet`. It is ComEd-zone demand,
+not neighborhood-level demand. Feature and model integration will follow in a
+separate change so this ingestion contract can be reviewed independently.
