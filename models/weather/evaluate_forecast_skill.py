@@ -81,6 +81,13 @@ def _mean_absolute_error(
         return float("nan")
     return float((paired.iloc[:, 0] - paired.iloc[:, 1]).abs().mean())
 
+def _paired_count(
+    actual: pd.Series,
+    predicted: pd.Series,
+) -> int:
+    """Count rows where both observed and forecast values are available."""
+    paired = pd.concat([actual, predicted], axis=1).dropna()
+    return len(paired)
 
 def _occurrence_metrics(
     actual: pd.Series,
@@ -111,21 +118,20 @@ def _occurrence_metrics(
 def evaluate_forecast_skill(
     forecasts: pd.DataFrame,
     observations: pd.DataFrame,
-    rain_threshold_mm: float = 0.1,
-    snow_threshold_cm: float = 0.1,
+    precipitation_threshold_mm: float = 0.1,    snow_threshold_cm: float = 0.1,
 ) -> pd.DataFrame:
     """Calculate forecast error and event skill for each lead-time horizon."""
-    if rain_threshold_mm < 0 or snow_threshold_cm < 0:
+    if precipitation_threshold_mm < 0 or snow_threshold_cm < 0:
         raise ValueError("Occurrence thresholds cannot be negative.")
 
     aligned = align_forecasts_with_observations(forecasts, observations)
     rows: list[dict[str, float | int]] = []
 
     for lead_time, group in aligned.groupby("lead_time_hours", sort=True):
-        rain_precision, rain_recall = _occurrence_metrics(
+        precipitation_precision, precipitation_recall = _occurrence_metrics(
             group["rain_mm"],
             group["forecast_rain_mm"],
-            rain_threshold_mm,
+            precipitation_threshold_mm,
         )
         snow_precision, snow_recall = _occurrence_metrics(
             group["snowfall_cm"],
@@ -136,6 +142,22 @@ def evaluate_forecast_skill(
             {
                 "lead_time_hours": int(lead_time),
                 "matched_hours": len(group),
+                "temperature_usable_hours": _paired_count(
+                    group["temperature_2m_c"],
+                    group["forecast_temperature_2m_c"],
+                ),
+                "apparent_temperature_usable_hours": _paired_count(
+                    group["apparent_temperature_c"],
+                    group["forecast_apparent_temperature_c"],
+                ),
+                "precipitation_usable_hours": _paired_count(
+                    group["precipitation_mm"],
+                    group["forecast_precipitation_mm"],
+                ),
+                "snowfall_usable_hours": _paired_count(
+                    group["snowfall_cm"],
+                    group["forecast_snowfall_cm"],
+                ),
                 "temperature_mae_c": _mean_absolute_error(
                     group["temperature_2m_c"],
                     group["forecast_temperature_2m_c"],
@@ -152,8 +174,8 @@ def evaluate_forecast_skill(
                     group["snowfall_cm"],
                     group["forecast_snowfall_cm"],
                 ),
-                "rain_precision": rain_precision,
-                "rain_recall": rain_recall,
+                "precipitation_precision": precipitation_precision,
+                "precipitation_recall": precipitation_recall,
                 "snow_precision": snow_precision,
                 "snow_recall": snow_recall,
             }

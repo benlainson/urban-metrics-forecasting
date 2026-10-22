@@ -115,6 +115,6 @@ def test_negative_occurrence_threshold_is_rejected():
         evaluate_forecast_skill(
             make_forecasts(),
             make_observations(),
-            rain_threshold_mm=-0.1,
+            precipitation_threshold_mm=-0.1,
         )
 
