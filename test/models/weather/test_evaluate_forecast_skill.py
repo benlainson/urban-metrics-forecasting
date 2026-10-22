@@ -66,10 +66,14 @@ def test_evaluate_forecast_skill_reports_metrics_by_horizon():
     day_one = metrics.iloc[0]
     day_two = metrics.iloc[1]
     assert day_one["matched_hours"] == 3
+    assert day_one["temperature_usable_hours"] == 3
+    assert day_one["apparent_temperature_usable_hours"] == 3
+    assert day_one["precipitation_usable_hours"] == 3
+    assert day_one["snowfall_usable_hours"] == 3
     assert day_one["temperature_mae_c"] == pytest.approx(1.0)
     assert day_two["temperature_mae_c"] == pytest.approx(7 / 3)
-    assert day_one["rain_precision"] == pytest.approx(1.0)
-    assert day_one["rain_recall"] == pytest.approx(0.5)
+    assert day_one["precipitation_precision"] == pytest.approx(1.0)
+    assert day_one["precipitation_recall"] == pytest.approx(0.5)
     assert day_one["snow_precision"] == pytest.approx(1.0)
     assert day_one["snow_recall"] == pytest.approx(1.0)
     assert math.isnan(day_two["snow_precision"])
