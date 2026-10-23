@@ -14,7 +14,6 @@ FORECAST_REQUIRED_COLUMNS = [
     "forecast_temperature_2m_c",
     "forecast_apparent_temperature_c",
     "forecast_precipitation_mm",
-    "forecast_rain_mm",
     "forecast_snowfall_cm",
 ]
 OBSERVED_REQUIRED_COLUMNS = [
@@ -22,7 +21,6 @@ OBSERVED_REQUIRED_COLUMNS = [
     "temperature_2m_c",
     "apparent_temperature_c",
     "precipitation_mm",
-    "rain_mm",
     "snowfall_cm",
 ]
 
@@ -81,6 +79,7 @@ def _mean_absolute_error(
         return float("nan")
     return float((paired.iloc[:, 0] - paired.iloc[:, 1]).abs().mean())
 
+
 def _paired_count(
     actual: pd.Series,
     predicted: pd.Series,
@@ -88,6 +87,7 @@ def _paired_count(
     """Count rows where both observed and forecast values are available."""
     paired = pd.concat([actual, predicted], axis=1).dropna()
     return len(paired)
+
 
 def _occurrence_metrics(
     actual: pd.Series,
@@ -118,7 +118,8 @@ def _occurrence_metrics(
 def evaluate_forecast_skill(
     forecasts: pd.DataFrame,
     observations: pd.DataFrame,
-    precipitation_threshold_mm: float = 0.1,    snow_threshold_cm: float = 0.1,
+    precipitation_threshold_mm: float = 0.1,
+    snow_threshold_cm: float = 0.1,
 ) -> pd.DataFrame:
     """Calculate forecast error and event skill for each lead-time horizon."""
     if precipitation_threshold_mm < 0 or snow_threshold_cm < 0:
@@ -129,8 +130,8 @@ def evaluate_forecast_skill(
 
     for lead_time, group in aligned.groupby("lead_time_hours", sort=True):
         precipitation_precision, precipitation_recall = _occurrence_metrics(
-            group["rain_mm"],
-            group["forecast_rain_mm"],
+            group["precipitation_mm"],
+            group["forecast_precipitation_mm"],
             precipitation_threshold_mm,
         )
         snow_precision, snow_recall = _occurrence_metrics(
