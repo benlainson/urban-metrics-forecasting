@@ -12,7 +12,8 @@ lead time:
 
 - Temperature and apparent-temperature MAE
 - Precipitation and snowfall MAE
-- Rain and snow occurrence precision and recall
+- Precipitation and snow occurrence precision and recall
+- Usable-hour counts for each metric, separate from timestamp matches
 
 ```bash
 .venv/bin/python -m models.weather.evaluate_forecast_skill \

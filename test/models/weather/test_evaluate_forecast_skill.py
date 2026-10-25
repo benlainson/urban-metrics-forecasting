@@ -17,14 +17,12 @@ def make_forecasts() -> pd.DataFrame:
             "temperature": [10.0, 12.0, 14.0],
             "apparent": [9.0, 11.0, 13.0],
             "precipitation": [0.0, 1.0, 0.0],
-            "rain": [0.0, 1.0, 0.0],
             "snowfall": [0.0, 0.0, 1.0],
         },
         48: {
             "temperature": [9.0, 10.0, 11.0],
             "apparent": [8.0, 9.0, 10.0],
             "precipitation": [0.0, 0.0, 1.0],
-            "rain": [0.0, 0.0, 1.0],
             "snowfall": [0.0, 0.0, 0.0],
         },
     }
@@ -37,7 +35,6 @@ def make_forecasts() -> pd.DataFrame:
                     "forecast_temperature_2m_c": values["temperature"][index],
                     "forecast_apparent_temperature_c": values["apparent"][index],
                     "forecast_precipitation_mm": values["precipitation"][index],
-                    "forecast_rain_mm": values["rain"][index],
                     "forecast_snowfall_cm": values["snowfall"][index],
                 }
             )
@@ -53,7 +50,6 @@ def make_observations() -> pd.DataFrame:
             "temperature_2m_c": [11.0, 11.0, 15.0],
             "apparent_temperature_c": [10.0, 10.0, 14.0],
             "precipitation_mm": [0.0, 1.0, 1.0],
-            "rain_mm": [0.0, 1.0, 1.0],
             "snowfall_cm": [0.0, 0.0, 1.0],
         }
     )
@@ -66,14 +62,39 @@ def test_evaluate_forecast_skill_reports_metrics_by_horizon():
     day_one = metrics.iloc[0]
     day_two = metrics.iloc[1]
     assert day_one["matched_hours"] == 3
+    assert day_one["temperature_usable_hours"] == 3
+    assert day_one["apparent_temperature_usable_hours"] == 3
+    assert day_one["precipitation_usable_hours"] == 3
+    assert day_one["snowfall_usable_hours"] == 3
     assert day_one["temperature_mae_c"] == pytest.approx(1.0)
     assert day_two["temperature_mae_c"] == pytest.approx(7 / 3)
-    assert day_one["rain_precision"] == pytest.approx(1.0)
-    assert day_one["rain_recall"] == pytest.approx(0.5)
+    assert day_one["precipitation_precision"] == pytest.approx(1.0)
+    assert day_one["precipitation_recall"] == pytest.approx(0.5)
     assert day_one["snow_precision"] == pytest.approx(1.0)
     assert day_one["snow_recall"] == pytest.approx(1.0)
     assert math.isnan(day_two["snow_precision"])
     assert day_two["snow_recall"] == pytest.approx(0.0)
+
+
+def test_usable_hours_exclude_missing_forecast_values():
+    forecasts = make_forecasts()
+    day_one = forecasts["lead_time_hours"] == 24
+    day_one_indexes = forecasts.index[day_one]
+    forecasts.loc[day_one_indexes[0], "forecast_temperature_2m_c"] = None
+    forecasts.loc[
+        day_one_indexes[:2], "forecast_precipitation_mm"
+    ] = None
+
+    metrics = evaluate_forecast_skill(forecasts, make_observations())
+
+    day_one_metrics = metrics.loc[
+        metrics["lead_time_hours"] == 24
+    ].iloc[0]
+    assert day_one_metrics["matched_hours"] == 3
+    assert day_one_metrics["temperature_usable_hours"] == 2
+    assert day_one_metrics["apparent_temperature_usable_hours"] == 3
+    assert day_one_metrics["precipitation_usable_hours"] == 1
+    assert day_one_metrics["snowfall_usable_hours"] == 3
 
 
 def test_alignment_does_not_modify_inputs():
@@ -111,6 +132,6 @@ def test_negative_occurrence_threshold_is_rejected():
         evaluate_forecast_skill(
             make_forecasts(),
             make_observations(),
-            rain_threshold_mm=-0.1,
+            precipitation_threshold_mm=-0.1,
         )
 
