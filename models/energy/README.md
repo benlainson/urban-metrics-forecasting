@@ -2,8 +2,9 @@
 
 Owner: Nick.
 
-One-hour-ahead **PJM-wide** electricity demand forecasting. Neighborhood weights
-are a separate approximation and are not training targets or model inputs.
+One-hour-ahead electricity demand forecasting for either **PJM-wide demand** or
+the **Commonwealth Edison (ComEd)** subregion. Neighborhood weights are a separate
+approximation and are not training targets or model inputs.
 
 ## Run training
 
@@ -25,6 +26,27 @@ external tracking service.
 
 Outputs are saved under `data/processed/energy/xgboost/` (gitignored). Re-running
 overwrites that run; use `--output data/processed/energy/another_run` to keep it.
+
+To train a separate Chicago-area ComEd model without overwriting the PJM run:
+
+```bash
+.venv/bin/python -m models.energy.train_xgboost \
+  --input data/raw/energy/eia_demand_comed.parquet \
+  --output data/processed/energy/xgboost_comed \
+  --max-demand 50000 \
+  --validation-start 2025-01-01 \
+  --test-start 2026-01-01 \
+  --test-end 2026-09-20
+
+.venv/bin/python -m models.energy.check_model \
+  --output data/processed/energy/xgboost_comed
+```
+
+The ComEd input must contain exactly one `parent=PJM`, `subba=CE` series. Its
+charts, report, and `metrics.json` identify ComEd rather than PJM. Both models
+still predict grid-level hourly demand, not neighborhood or building usage. The
+example trains through 2024, uses 2025 for model selection, and keeps the
+available 2026 observations as the untouched test period.
 
 ## Check the result
 

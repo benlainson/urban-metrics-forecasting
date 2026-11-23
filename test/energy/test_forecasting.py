@@ -8,7 +8,9 @@ import pandas as pd
 from features.energy.engineer import (
     add_lag_and_rolling_features, build_features, clean_outliers, join_weather,
 )
-from models.energy.train_xgboost import FEATURE_COLUMNS, regression_metrics, split_chronologically
+from models.energy.train_xgboost import (
+    FEATURE_COLUMNS, identify_demand_series, regression_metrics, split_chronologically,
+)
 
 
 def demand_frame(hours=600):
@@ -100,6 +102,22 @@ class FeatureTests(unittest.TestCase):
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_trainer_identifies_pjm_and_comed_series(self):
+        pjm = identify_demand_series(demand_frame())
+        self.assertEqual(pjm["code"], "PJM")
+        self.assertEqual(pjm["label"], "PJM")
+
+        comed = demand_frame().drop(columns="respondent")
+        comed["parent"] = "PJM"
+        comed["subba"] = "CE"
+        metadata = identify_demand_series(comed)
+        self.assertEqual(metadata["code"], "PJM/CE")
+        self.assertIn("ComEd", metadata["label"])
+
+        comed.loc[0, "subba"] = "OTHER"
+        with self.assertRaises(ValueError):
+            identify_demand_series(comed)
+
     def test_split_boundaries_are_exclusive_and_disjoint(self):
         frame = pd.DataFrame({"period": pd.to_datetime([
             "2019-12-31", "2020-01-01", "2022-12-31", "2023-01-01",
