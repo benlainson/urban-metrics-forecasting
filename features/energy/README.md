@@ -2,8 +2,9 @@
 
 Owner: Nick.
 
-Feature engineering for hourly PJM-wide demand: UTC calendar fields, demand lags
-of 1/24/168 hours, and rolling means over 24/168 hours ending at the previous hour.
+Feature engineering for one hourly EIA demand series: UTC calendar fields,
+demand lags of 1/24/168 hours, and rolling means over 24/168 hours ending at the
+previous hour. The default input remains PJM-wide demand.
 
 Missing timestamps are restored on a complete UTC hourly timeline before shifts.
 Invalid demand becomes null rather than removing an hour. Examples with a missing
@@ -16,9 +17,21 @@ For demand-only features, run from the repository root:
 .venv/bin/python features/energy/engineer.py --skip-weather
 ```
 
-This writes `data/processed/energy/features.parquet` and, if benchmarking data
-exists, a separate community-area weighting table. That table is not measured
-neighborhood hourly demand and is not used by the initial model.
+For Commonwealth Edison features, select its raw input and a separate output:
+
+```bash
+.venv/bin/python features/energy/engineer.py \
+  --input data/raw/energy/eia_demand_comed.parquet \
+  --output data/processed/energy/features_comed.parquet \
+  --max-demand 50000 \
+  --skip-weather
+```
+
+The default command writes `data/processed/energy/features.parquet`; the ComEd
+command writes `data/processed/energy/features_comed.parquet`. If benchmarking
+data exists, either command also writes a separate community-area weighting
+table. That table is not measured neighborhood hourly demand and is not used by
+the initial model.
 
 Without `--skip-weather`, the optional weather join accepts `timestamp_utc` or
 `period`, normalizes UTC, and requires one selected weather location per hour.

@@ -72,6 +72,20 @@ class FeatureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             clean_outliers(raw, 300000)
 
+    def test_comed_subregion_builds_features_and_rejects_mixed_series(self):
+        raw = demand_frame().drop(columns="respondent")
+        raw["parent"] = "PJM"
+        raw["subba"] = "CE"
+        raw["value"] = 10000.0 + np.arange(len(raw))
+
+        features = build_features(raw, 50000, include_weather=False)
+        self.assertFalse(features.empty)
+        self.assertEqual(str(features.period.dt.tz), "UTC")
+
+        raw.loc[0, "subba"] = "OTHER"
+        with self.assertRaises(ValueError):
+            clean_outliers(raw, 50000)
+
     def test_lags_reject_unregularized_input(self):
         with self.assertRaises(ValueError):
             add_lag_and_rolling_features(demand_frame().drop(index=200))
